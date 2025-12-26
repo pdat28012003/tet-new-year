@@ -462,14 +462,7 @@
     <div class="background-decoration" id="bgDecoration"></div>
 
     <!-- Instructions Modal -->
-    <div class="instructions" id="instructions">
-        <h2>🎊 Hướng dẫn sử dụng</h2>
-        <p>📱 <strong>Bước 1:</strong> Nhấn vào nút "📤 Chọn Ảnh" để tải ảnh của bạn lên</p>
-        <p>🧧 <strong>Bước 2:</strong> Chọn một bao lì xì màu đỏ để gán ảnh vào</p>
-        <p>✨ <strong>Bước 3:</strong> Nhấn vào bao lì xì đã gán ảnh để mở và xem!</p>
-        <p>🎉 <strong>Lưu ý:</strong> Bạn có thể tải nhiều ảnh và gán vào các bao lì xì khác nhau</p>
-        <button class="close-btn" onclick="closeInstructions()">Đã hiểu! 🎆</button>
-    </div>
+
 
     <!-- Header -->
     <header>
@@ -477,13 +470,7 @@
         <div class="subtitle">✨ An Khang Thịnh Vượng - Vạn Sự Như Ý ✨</div>
     </header>
 
-    <!-- Upload Section -->
-    <div class="upload-section">
-        <input type="file" id="fileInput" accept="image/*">
-        <div class="upload-info" id="uploadInfo">
-            💡 Nhấn vào từng bao lì xì để tải ảnh lên cho bao đó.
-        </div>
-    </div>
+
 
     <!-- Main Content -->
     <main>
@@ -507,7 +494,6 @@
         const NUM_PETALS = 30;
         const NUM_LANTERNS = 4;
         
-        let pendingEnvelopeId = null;
         let envelopeData = {};
 
         // Initialize
@@ -515,7 +501,6 @@
             createBackgroundElements();
             createEnvelopes();
             loadEnvelopeData();
-            setupFileInput();
             createFireworks();
         };
 
@@ -567,8 +552,7 @@
                 'Công Danh Thăng Tiến',
                 'Gia Đình Hạnh Phúc',
                 'Tình Duyên Như Mơ',
-                'An Khang Thịnh Vượng',
-                'Gia đình đoàn viên',
+                'An Khang Thịnh Vượng'
             ];
             
             for (let i = 0; i < NUM_ENVELOPES; i++) {
@@ -599,31 +583,6 @@
             }
         }
 
-        // Setup file input
-        function setupFileInput() {
-            const fileInput = document.getElementById('fileInput');
-            fileInput.addEventListener('change', function(e) {
-                const file = e.target.files && e.target.files[0] ? e.target.files[0] : null;
-                const envelopeId = pendingEnvelopeId;
-                pendingEnvelopeId = null;
-
-                if (!file || envelopeId === null || envelopeId === undefined) {
-                    fileInput.value = '';
-                    return;
-                }
-
-                uploadImageForEnvelope(envelopeId, file).finally(() => {
-                    fileInput.value = '';
-                });
-            });
-        }
-
-        function updateUploadInfo() {
-            const info = document.getElementById('uploadInfo');
-            info.innerHTML = '💡 Nhấn vào từng bao lì xì để tải ảnh lên cho bao đó.';
-            info.style.color = '#FFD700';
-        }
-
         // Handle envelope click
         function handleEnvelopeClick(id) {
             const envelope = document.querySelector(`[data-id="${id}"]`);
@@ -633,14 +592,19 @@
             
             if (hasImage) {
                 envelope.classList.toggle('opened');
+                
                 if (envelope.classList.contains('opened')) {
                     createFireworkBurst(envelope);
                 }
-                return;
+            } else {
+                const info = document.getElementById('uploadInfo');
+                info.innerHTML = `ℹ️ Bao lì xì #${id + 1} chưa có ảnh.`;
+                info.style.color = '#FFD700';
+                setTimeout(() => {
+                    info.innerHTML = '👀 Trang này chỉ để xem ảnh của từng bao lì xì.';
+                    info.style.color = '#FFD700';
+                }, 2500);
             }
-
-            pendingEnvelopeId = id;
-            document.getElementById('fileInput').click();
         }
 
         function updateEnvelopeContent(id) {
@@ -703,11 +667,6 @@
             }, 3000);
         }
 
-        // localStorage functions
-        function saveEnvelopeData() {
-            localStorage.setItem('tetEnvelopeData', JSON.stringify(envelopeData));
-        }
-
         function loadEnvelopeData() {
             fetch('/api/envelopes')
                 .then((res) => res.json())
@@ -732,56 +691,12 @@
                     });
                 })
                 .catch((_e) => {
-                    updateUploadInfo();
+                    const info = document.getElementById('uploadInfo');
+                    if (info) {
+                        info.innerHTML = '❌ Không tải được dữ liệu từ server.';
+                        info.style.color = '#FFD700';
+                    }
                 });
-        }
-
-        async function uploadImageForEnvelope(envelopeId, file) {
-            const info = document.getElementById('uploadInfo');
-            info.innerHTML = `⏳ Đang tải ảnh lên cho bao lì xì #${envelopeId + 1}...`;
-            info.style.color = '#FFD700';
-
-            const formData = new FormData();
-            formData.append('image', file);
-            formData.append('envelopeId', String(envelopeId));
-
-            const res = await fetch('/api/uploads', { method: 'POST', body: formData });
-
-            let data;
-            try {
-                data = await res.json();
-            } catch (_e) {
-                data = null;
-            }
-
-            if (!res.ok) {
-                const message = data && data.error ? data.error : `Upload failed (${res.status})`;
-                info.innerHTML = `❌ Upload lỗi: ${message}`;
-                info.style.color = '#FFD700';
-                setTimeout(() => updateUploadInfo(), 3500);
-                return;
-            }
-
-            envelopeData[envelopeId] = {
-                image: data.url,
-                message: 'Chúc bạn năm mới<br>tràn đầy niềm vui!'
-            };
-            updateEnvelopeContent(envelopeId);
-
-            const envelope = document.querySelector(`[data-id="${envelopeId}"]`);
-            if (envelope) {
-                envelope.classList.add('has-image');
-                envelope.classList.add('shake');
-                setTimeout(() => {
-                    envelope.classList.remove('shake');
-                    envelope.classList.add('opened');
-                    createFireworkBurst(envelope);
-                }, 500);
-            }
-
-            info.innerHTML = `✅ Đã tải ảnh lên cho bao lì xì #${envelopeId + 1}.`;
-            info.style.color = '#FFD700';
-            setTimeout(() => updateUploadInfo(), 2500);
         }
 
         // Show instructions on first visit

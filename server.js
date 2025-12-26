@@ -12,6 +12,7 @@ const app = express();
 
 const port = Number(process.env.PORT || 8080);
 const mongoUrl = process.env.MONGO_URL;
+const uploadDir = process.env.UPLOAD_DIR;
 const maxFileSize = Number(process.env.MAX_FILE_SIZE || 10 * 1024 * 1024);
 
 if (!mongoUrl) {
@@ -46,6 +47,10 @@ const upload = multer({
 });
 
 app.use(express.json());
+
+if (uploadDir) {
+  app.use('/uploads', express.static(path.resolve(process.cwd(), uploadDir)));
+}
 
 app.get('/', (_req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
@@ -90,7 +95,7 @@ app.post('/api/uploads', upload.single('image'), async (req, res) => {
       readable
         .pipe(uploadStream)
         .on('error', reject)
-        .on('finish', (file) => resolve(String(file._id)));
+        .on('finish', () => resolve(String(uploadStream.id)));
     });
 
     const url = `/api/files/${fileId}`;
@@ -125,15 +130,20 @@ app.get('/api/uploads', async (_req, res) => {
   await ensureDb();
   const docs = await Upload.find().sort({ createdAt: -1 }).limit(200).lean();
   res.json(
-    docs.map((d) => ({
-      id: String(d._id),
-      envelopeId: d.envelopeId,
-      url: d.url,
-      originalName: d.originalName,
-      mimeType: d.mimeType,
-      size: d.size,
-      createdAt: d.createdAt
-    }))
+    docs
+      .filter((d) => {
+        if (!uploadDir && !d.fileId) return false;
+        return true;
+      })
+      .map((d) => ({
+        id: String(d._id),
+        envelopeId: d.envelopeId,
+        url: d.url,
+        originalName: d.originalName,
+        mimeType: d.mimeType,
+        size: d.size,
+        createdAt: d.createdAt
+      }))
   );
 });
 
@@ -142,6 +152,12 @@ app.get('/api/envelopes', async (_req, res) => {
   const docs = await Upload.find().lean();
   const byEnvelopeId = {};
   docs.forEach((d) => {
+    if (!Number.isInteger(d.envelopeId) || d.envelopeId < 0) {
+      return;
+    }
+    if (!uploadDir && !d.fileId) {
+      return;
+    }
     byEnvelopeId[d.envelopeId] = {
       id: String(d._id),
       envelopeId: d.envelopeId,
@@ -153,6 +169,35 @@ app.get('/api/envelopes', async (_req, res) => {
     };
   });
   res.json(byEnvelopeId);
+});
+
+app.delete('/api/envelopes/:envelopeId', async (req, res) => {
+  try {
+    await ensureDb();
+    const envelopeId = Number(req.params.envelopeId);
+    if (!Number.isInteger(envelopeId) || envelopeId < 0) {
+      res.status(400).json({ error: 'Invalid envelopeId' });
+      return;
+    }
+
+    const doc = await Upload.findOneAndDelete({ envelopeId }).lean();
+    if (!doc) {
+      res.json({ ok: true, deleted: false });
+      return;
+    }
+
+    if (doc.fileId) {
+      try {
+        gfsBucket.delete(new mongoose.Types.ObjectId(doc.fileId), () => {
+        });
+      } catch (_e) {
+      }
+    }
+
+    res.json({ ok: true, deleted: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Delete failed' });
+  }
 });
 
 app.get('/api/files/:id', async (req, res) => {
